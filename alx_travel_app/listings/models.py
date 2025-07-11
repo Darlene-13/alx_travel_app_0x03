@@ -176,7 +176,7 @@ class Booking(models.Model):
 
     # Primary key using UUID
     booking_id = models.UUIDField(primary_key = True, default = uuid.uuid4,  help_text = " Unique identifier for booking" ,editable = False)
-    property = models.ForeignKey(Listing, on_delete = models.CASCADE, related_name = 'bookings', help_text = "The property being booked")
+    listing = models.ForeignKey(Listing, on_delete = models.CASCADE, related_name = 'bookings', help_text = "The property being booked")
     user = models.ForeignKey(UserProfile, on_delete = models.CASCADE, related_name = 'The guest making the booking')
     start_date = models.DateTimeField(help_text = 'Check in date')
     end_date = models.DateTimeField(help_text = "Check out date")
@@ -248,8 +248,8 @@ class Review(models.Model):
 
     review_id = models.UUIDField(primary_key = True, default = uuid.uuid4, editable = False,  help_text = " Unique identifier for the review")
     booking = models.OneToOneField(Booking, on_delete = models.CASCADE, related_name = 'review', help_text = "The booking this review is for")
-    property = models.ForeignKey(Listing, on_delete = models.CASCADE, related_name = 'reviews' , help_text = "The property being reviewed")
-    user = models.ForeignKey(UserProfile, on_delet = models.CASCADE, related_name= 'reviews_written', help_text = "The guest who wrote the review")
+    listing = models.ForeignKey(Listing, on_delete = models.CASCADE, related_name = 'reviews' , help_text = "The property being reviewed")
+    user = models.ForeignKey(UserProfile, on_delete = models.CASCADE, related_name= 'reviews_written', help_text = "The guest who wrote the review")
     rating = models.PositiveIntegerField(validators = [MinValueValidator(1), MaxValueValidator(5)], help_text = "Rating from 1 to 5 stars")
     comment = models.TextField(blank = True, null=True, help_text = "Optional guest's written review")
     # Responses from the host
