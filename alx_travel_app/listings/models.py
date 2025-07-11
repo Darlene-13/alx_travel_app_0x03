@@ -26,7 +26,7 @@ class UserProfile(models.Model):
 
     #Primary key using UUID for security purposes
     user_id = models.UUIDField(primary_key =True, default = uuid.uuid4, editable=False, help_text = "Unique Identifier for the user")
-    user = models.OneToOneField(User, on_delete = models.CASCADE, help_text = "Link to Django built-in user identification")
+    linked_user = models.OneToOneField(User, on_delete = models.CASCADE, help_text = "Link to Django built-in user identification")
     phone_number = models.CharField(max_length = 15, blank = True, null = True, help_text = "Use's phone number")
     profile_picture = models.ImageField(upload_to = 'profile_pics/', blank = True, null = True, help_text = "Use's Profile picture")
     role = models.CharField(max_length = 10, choices = ROLE_CHOICES, default= 'guest', help_text = "User's Role")
@@ -41,11 +41,11 @@ class UserProfile(models.Model):
 
 
     def __str__(self):
-        return f"{self.user.get_full_name()} ({self.role})"
+        return f"{self.linked_user.get_full_name()} ({self.role})"
 
     def get_full_name(self):
         # Retun the user's full name
-        return self.user.get_full_name()
+        return self.linked_user.get_full_name()
 
     @property
     def is_hot(self):
@@ -177,7 +177,7 @@ class Booking(models.Model):
     # Primary key using UUID
     booking_id = models.UUIDField(primary_key = True, default = uuid.uuid4,  help_text = " Unique identifier for booking" ,editable = False)
     listing = models.ForeignKey(Listing, on_delete = models.CASCADE, related_name = 'bookings', help_text = "The property being booked")
-    user = models.ForeignKey(UserProfile, on_delete = models.CASCADE, related_name = 'The guest making the booking')
+    user = models.ForeignKey(UserProfile, on_delete = models.CASCADE, help_text = 'The guest making the booking')
     start_date = models.DateTimeField(help_text = 'Check in date')
     end_date = models.DateTimeField(help_text = "Check out date")
     # Guests information
@@ -207,7 +207,7 @@ class Booking(models.Model):
             ),
         ]
     def __str__(self):
-        return f"Bookung {self.booking_id} - {self.property.name}"
+        return f"Booking {self.booking_id} - {self.property.name}"
     
     @property
     def duration_nights(self):
@@ -232,7 +232,7 @@ class Booking(models.Model):
             
             #Checking if the start date is in the past
             if self.start_date < timezone.now().date():
-                raise ValidationError("Start date cannote be in the past")
+                raise ValidationError("Start date can't be in the past")
         
         # check if the guest count does not exceed the property maximum capacity
         if self.guests_count and self.property:
@@ -270,7 +270,7 @@ class Review(models.Model):
 
 
     def __str__(self):
-        return f"Review by {self.user.get_full_name()} - {self.rating} stars"
+        return f"Review by {self.linked_user.get_full_name()} - {self.rating} stars"
     
     @property
     def has_host_response(self):

@@ -119,7 +119,7 @@ class BookingFilter(filters.FilterSet):
     class Meta:
         model = Booking
         fields = [
-            'status', 'guests_count',
+            'status', 'guests',
             'start_date_from', 'start_date_to',
             'end_date_from', 'end_date_to',
             'min_price', 'max_price',

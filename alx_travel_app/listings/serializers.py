@@ -168,7 +168,7 @@ class ReviewSerializer(serializers.ModelSerializer):
 
 
     #  Calculated fields
-    has_host_response = serializers.ReadOnly()
+    has_host_response = serializers.ReadOnlyField()
 
     class Meta:
         model = Review 
