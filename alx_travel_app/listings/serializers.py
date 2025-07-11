@@ -54,7 +54,7 @@ class ListingSerializer(serializers.ModelSerializer):
              'property_id', 'host', 'name', 'description',
              'property_type', 'room_type', 'property_type_display', 'room_type_display',
              'city', 'county', 'postal_code', 'latitude', 'longitude',
-             'bedrooms', 'bathrooms', 'max_guests', 'price_per_night',
+             'bedroom', 'bathroom', 'max_guests', 'price_per_night',
              'status', 'status_display', 'created_at', 'updated_at', 'is_available',
              'average_rating', 'review_count'
 
@@ -90,22 +90,25 @@ class BookingSerializer(serializers.ModelSerializer):
 
     # Calculated fields
     duration_nights = serializers.ReadOnlyField()
-    is_actieve = serializers.ReadOnlyField()
+    is_active = serializers.ReadOnlyField()
     can_be_reviewed = serializers.ReadOnlyField()
 
     # Display the status as human-readble test
-    status = serializers.CharField(source = 'get_status_display')
+    status_display = serializers.SerializerMethodField()
 
     class Meta:
+        model = Booking
         fields = [
             'booking_id', 'property', 'user', 'property_id', 'user_id',
-            'start_date', 'end_date', 'guests_count', 'total_price',
+            'start_date', 'end_date', 'guests', 'total_price',
             'status', 'status_display', 'duration_nights', 'is_active', 'can_be_reviewed',
             'created_at', 'updated_at'
         ]
 
         read_only_fields = ['booking_id', 'created_at', 'updated_at']
-
+    
+    def get_status_display(self,obj):
+        return obj.get_status_display()
     def validate(self, data):
         start_date = data.get('start_date')
         end_date = data.get('end_date')
