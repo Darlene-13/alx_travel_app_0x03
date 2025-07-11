@@ -13,7 +13,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 from pathlib import Path # Modern OS safe way to handle filesystem paths
 import os
 import environ
-from decouple import config
+from decouple import config, Csv
 
 
 # Initializing django environment
@@ -256,3 +256,100 @@ LOGGING = {
         },
     },
 }
+
+# CELERY CONFIGURATION
+
+# Message broker configuration
+# 1. Redis as the message broker (for development purposes)
+#CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://localhost:6379/0')
+#CELERY_RESULT_BACKEND = config('CELERY_RESULT_BACKEND', default='redis://localhost:6379/0')
+
+# 2. Using RabbitMQ
+CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='amqp://guest:guest@localhost:5672//')
+CELERY_RESULT_BACKEND = config('CELERY_RESULT_BACKEND', default='rpc://')
+
+
+# Celery task  Configuration
+CELERY_ACCEPT_CONTENT = ['json'] 
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZERR = 'json'
+CELERY_IIMEZONE = 'UTC' 
+CELERY_ENABLE_UTC = True #
+
+# Task execution settings
+CELERY_TASK_TRACK_STARTED = True # Track when tasks start
+CELERY_TASK_TIME_LIMIT = 30 * 60
+CELERY_TASK_SOFT_TIME_LIMIT = 5 * 60
+CELERY_WORKER_CONCURRENCY = 4
+
+# Task Routing Configuration
+CELERY_TASK_ROUTES = {
+    'listings.tasks.send_booking_confirmation_email': {'queue': 'emails'},
+    'listings.tasks.send_booking_reminder_email': {'queue': 'emails'},
+    'listings.tasks.cleanup_old_logs': {'queue': 'maintenance'},
+}
+
+# QUEUE Configuration
+CELERY_TASK_DEFAULT_QUEUE = 'default'
+CELERY_TASK_QUEUES = {
+    'default': {
+        'exchange': 'default',
+        'routing_key': 'default',
+    },
+    'emails': {
+        'exchange': 'emails',
+        'routing_key': 'emails',
+    },
+    'maintenance':{
+        'exchange': 'maintenance',
+        'routing_key': 'maintenance',
+    },
+}
+
+# TASK RESULT SETTINGS
+CELERY_RESULT_EXPIRES = 3600
+CELERY_TASL_RESULT_EXPIRES = 3600
+
+#Worker configuration
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_TASK_ACKS_LATE = True
+CELERY_WORKER_DISABLE_RATE_LIMITS = False
+
+#Monitoring and debugging
+CELERY_SEND_TASK_EVENTS = True
+CELERY_TASK_SEND_SENT_EVENT = True
+
+# Development settings
+if DEBUG:
+    # In development, run tasks synchronously for easier debugging
+    # Uncomment the following line to enable synchronous task execution during production
+    #CELERY_TASk_ALWAYS_EAGER = True
+    # CELERY_TASK_EAGER_PROPAGATES = True 
+    pass
+
+#EMAIL CONFIGURATION
+# Email backend configuration
+if DEBUG:
+    # For development print emails to the console
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+else:
+    # For production use the SMTP Backend
+    EMAIL_BACKEND = config('EMAIL_BACKEND', default='django.core.mail.backends.smtp.EmailBackend')
+
+
+# SMTP Configuration for production
+EMAIL_HOST = config('EMAIL_HOST', default = 'smtp.gmail.com')
+EMAIL_PORT = config('EMAIL_PORT', default=587, cast = int)
+EMAIL_USE_TLS = config('EMAIL_USE_TLS', default = True, cast=bool)
+EMAIL__USE_SSL = config('EMAIL_USE_SSL', default=False, cast = bool)
+EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
+
+
+#Email settings for the application
+DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default= 'ALX Travel App <noreply@alxtravel.com>')
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
+ADMIN_EMAIL = config('ADMIN_EMAIL', default='darlenewendie@gmail.com')
+
+#EMAIL SUBJECT PREFIX
+EMAIL_SUBJECT_PREFIX = '[ALX Travel]'
