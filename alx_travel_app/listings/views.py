@@ -148,7 +148,6 @@ class ListingViewSet(viewsets.ModelViewSet):
     - GET /api/v1/listings/{id}/reviews/ - Get reviews for listing
     - GET /api/v1/listings/search/ - Advanced search
     """
-    queryset = Listing.objects.all(status='approved')
     serializer_class = ListingSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]  # Anyone can view, only authenticated users can create/update/delete
     lookup_field = 'property_id'  # Use UUID instead of default pk
