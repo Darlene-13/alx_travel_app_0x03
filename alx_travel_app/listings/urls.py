@@ -19,7 +19,10 @@ from .views import (
     UserProfileViewSet,
     ListingViewSet,
     BookingViewSet,
-    ReviewViewSet
+    ReviewViewSet,
+    check_email_task_status,
+    test_celery,
+    send_test_email
 )
 
 # Create a router and register our viewsets
@@ -40,6 +43,12 @@ urlpatterns = [
     # Authentication endpoints
     path('api/token/', csrf_exempt(TokenObtainPairView.as_view()), name='token_obtain_pair'),
     path('api/token/refresh/', csrf_exempt(TokenRefreshView.as_view()), name='token_refresh'),
+
+    # Task monitoring endpoints
+    path('api/email-task-status/<str:task_id>/', check_email_task_status, name='email_task_status'),
+    path('api/test-celery/', test_celery, name='test_celery'),
+    path('api/send-test-email/', send_test_email, name='send_test_email'),
+
 ]
 
 app_name = 'listings'
