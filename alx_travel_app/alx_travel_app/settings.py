@@ -14,6 +14,7 @@ from pathlib import Path # Modern OS safe way to handle filesystem paths
 import os
 import environ
 from decouple import config, Csv
+import sys
 
 
 # Initializing django environment
@@ -214,7 +215,7 @@ SWAGGER_SETTINGS = {
     },
     'USE_SESSION_AUTH': False, # Tells swagger that it should not allow the option to login via Django Session Auth
     'JSON_EDITOR': True,  #Allows the editting of the request header as JSON raw file this is useful when testing the POST and PUT requests
-    'SUP[PORTED_SUBMIT_METHODS': [
+    'SUPPORTED_SUBMIT_METHODS': [
         'get',
         'post',
         'put',
@@ -223,20 +224,20 @@ SWAGGER_SETTINGS = {
     ],
 }
 
-#Celery configuration (for background tasks)
-CELERY_BROKER_URL = 'amqp://localhost' # RabbitMQ broker....Tells celery which broker to use, the broker is like a task queue
-# The broker stores task that are waiting to be run AMPQ = Advaned Message Queueing Protocal that runs locally
-CELERY_RESULT_BACKEND = 'django-db' # Tells celery where to store the task results
-CELERY_ACCEPT_CONTENT = ['json'] # Upon sending a task it is converted to JSON
-CELERY_TASK_SERIALIZER = 'json', # Upon storing the task, it is stored as a JSON
-CELERY_RESULT_SERIALIZER = 'json',
-CELERY_TIMEZONE = TIME_ZONE  #Tells celery which timezone to use when handling tasks that are time dependent
-
-
 #Logging configuration
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,  # Allow exisiting loggers to continue working
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{'
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{'
+        },
+    },
     'handlers': { #Defines where the log messages go to....
         'file':{
             'level': 'INFO',
@@ -247,22 +248,59 @@ LOGGING = {
             'level': 'DEBUG', 
             'class': 'logging.StreamHandler',
         },
+        'celery_file': {
+            'level': 'INFO',
+            'class': 'logging.FileHandler',
+            'filename': BASE_DIR /'logs'/ 'celery.log',
+            'formatter': 'verbose', # Use the verbose formatter for more detailed logging  
+        },
+        'email_file': {
+            'level': 'ERROR',
+            'class': 'logging.FileHandler',
+            'filename': os.path.join(BASE_DIR, 'logs', 'email.log'),
+            'formatter': 'verbose', # Use the verbose formatter for more detailed logging
+        },
+        'console': {
+            'level': 'INFO',
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple', # Use the simple formatter for less detailed logging
+        },
+
     },
-    'loggers': {
+    'loggers': { # Who is sending the log messages
         'django': {
             'handlers': ['file', 'console'],
             'level': 'INFO',
             'propagate': True,
         },
+        'celery': {
+            'handlers': ['celery_file', 'console'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        'celery.task': {
+            'handlers': ['celery_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'listing.tasks': {
+            'handlers': ['email_file', 'console'],
+            'level': 'ERROR',
+            'propagate': True, # Propagate means that the log message will be passed to the parent logger
+        }
     },
 }
 
+# Create a log directory if it does not exist
+LOGS_DIR = BASE_DIR /'logs'
+if not os.path.exists(LOGS_DIR):
+    os.makedirs(LOGS_DIR)
 # CELERY CONFIGURATION
 
 # Message broker configuration
 # 1. Redis as the message broker (for development purposes)
-#CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://localhost:6379/0')
-#CELERY_RESULT_BACKEND = config('CELERY_RESULT_BACKEND', default='redis://localhost:6379/0')
+CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://localhost:6379/0')
+CELERY_RESULT_BACKEND = config('CELERY_RESULT_BACKEND', default='redis://localhost:6379/0')
 
 # 2. Using RabbitMQ
 CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='amqp://guest:guest@localhost:5672//')
@@ -353,3 +391,37 @@ ADMIN_EMAIL = config('ADMIN_EMAIL', default='darlenewendie@gmail.com')
 
 #EMAIL SUBJECT PREFIX
 EMAIL_SUBJECT_PREFIX = '[ALX Travel]'
+
+
+#TESTING THE OVERRIDES
+
+if 'test' in sys.argv:
+    # If running tests, use the in-memory database
+    DATABASES['default'] = {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': ':memory:' # Use the in-memory database for tests
+    }
+
+    # Use local memory for email_backend for testing
+    EMAIL_BACKEND = 'django.core.mail.backends.locmem.EmailBackend'
+
+    # Run celery tasks synchronously for testing
+    CELERY_TASK_ALWAYS_EAGER = True
+    CELERY_TASK_EAGER_PROPAGATES = True
+
+    # Disable logging during tests
+    LOGGING_CONFIG = None 
+
+
+#PRODUCTION SETTINGS
+if not DEBUG:
+    # Security settings for production
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = 'DENY' # Prevents clickjacking attacks
+
+    #Email settings for production
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+
+    # Celery settings for production
+    CELERY_WORKER_CONCURRENCY = config('CELERY_WORKER_CONCURRENCY', default=4, cast=int)
