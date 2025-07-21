@@ -86,7 +86,7 @@ def send_booking_confirmation_email(self, booking_id, user_email, user_name, lis
             </head>
             <body>
                 <div class="header">
-                    <h1>🎉 Booking Confirmed!</h1>
+                    <h1>Booking Confirmed!</h1>
                 </div>
                 <div class="content">
                     <p>Dear {user_name},</p>
@@ -94,7 +94,7 @@ def send_booking_confirmation_email(self, booking_id, user_email, user_name, lis
                     <p>Great news! Your booking has been confirmed. We're excited to host you!</p>
                     
                     <div class="booking-details">
-                        <h3>📋 Booking Details</h3>
+                        <h3>Booking Details</h3>
                         <p><strong>Booking ID:</strong> {booking_id}</p>
                         <p><strong>Property:</strong> {listing_title}</p>
                         <p><strong>Check-in:</strong> {check_in_date}</p>
@@ -102,9 +102,9 @@ def send_booking_confirmation_email(self, booking_id, user_email, user_name, lis
                         {f"<p><strong>Total Price:</strong> ${total_price}</p>" if total_price else ""}
                     </div>
                     
-                    <h3>📞 Need Help?</h3>
+                    <h3>Need Help?</h3>
                     <p>If you have any questions or need to make changes to your booking, please contact us at:</p>
-                    <p>📧 <a href="mailto:{settings.ADMIN_EMAIL}">{settings.ADMIN_EMAIL}</a></p>
+                    <p><a href="mailto:{settings.ADMIN_EMAIL}">{settings.ADMIN_EMAIL}</a></p>
                     
                     <p>We look forward to providing you with an amazing experience!</p>
                     
@@ -167,7 +167,7 @@ def send_booking_confirmation_email(self, booking_id, user_email, user_name, lis
         # Send email with both HTML and plain text versions
         if html_content:
             # Send multipart email (HTML + plain text)
-            email = EmailMultiAlternatives(
+            email = EmailMultiAlternatives( # TO send both HTML rendered and plain text
                 subject=subject,
                 body=plain_text_content,
                 from_email=settings.DEFAULT_FROM_EMAIL,
@@ -319,10 +319,7 @@ def send_booking_cancellation_email(booking_id, user_email, user_name, listing_t
         logger.error(f"Failed to send booking cancellation email for booking {booking_id}: {str(exc)}")
         raise exc
 
-
-# =========================
 # MAINTENANCE TASKS
-# =========================
 
 @shared_task(name='cleanup_old_logs')
 def cleanup_old_logs():
@@ -391,10 +388,7 @@ def send_admin_notification(subject, message, admin_emails=None):
         logger.error(f"Failed to send admin notification: {str(exc)}")
         raise exc
 
-
-# =========================
 # UTILITY TASKS
-# =========================
 
 @shared_task(name='process_booking_analytics')
 def process_booking_analytics(date_range=None):

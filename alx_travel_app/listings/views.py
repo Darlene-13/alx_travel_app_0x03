@@ -10,6 +10,7 @@ This file contains ViewSets that provide RESTful API endpoints for:
 Each ViewSet provides full CRUD operations with proper permissions,
 filtering, searching, and pagination.
 """
+import logging
 
 from rest_framework import viewsets, status, permissions, filters
 from rest_framework.decorators import action
@@ -19,6 +20,10 @@ from django.shortcuts import get_object_or_404
 from django.contrib.auth.models import User
 from django.db.models import Q, Avg
 from datetime import date
+from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated, AllowAny, IsAuthenticatedOrReadOnly
+from django.utils import timezone
+from celery.result import AsyncResult
 
 from .models import UserProfile, Listing, Booking, Review
 from .serializers import (
@@ -28,7 +33,15 @@ from .serializers import (
     ReviewSerializer
 )
 from .filters import ListingFilter, BookingFilter  # We'll create these
+from.tasks import (
+    send_booking_confirmation_email,
+    send_booking_reminder_email,
+    send_booking_cancellation_email,
+    cleanup_old_logs,
+    test_celery_connection
+)
 
+logger = logging.getLogger(__name__)
 
 class UserProfileViewSet(viewsets.ModelViewSet):
     """
@@ -135,10 +148,11 @@ class ListingViewSet(viewsets.ModelViewSet):
     - GET /api/v1/listings/{id}/reviews/ - Get reviews for listing
     - GET /api/v1/listings/search/ - Advanced search
     """
-    
+    queryset = Listing.objects.all(status='approved')
     serializer_class = ListingSerializer
+    permission_classes = [IsAuthenticatedOrReadOnly]  # Anyone can view, only authenticated users can create/update/delete
     lookup_field = 'property_id'  # Use UUID instead of default pk
-    
+
     # Filtering, searching, and ordering
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = ListingFilter  # Custom filter class (we'll create this)
@@ -147,16 +161,49 @@ class ListingViewSet(viewsets.ModelViewSet):
     ordering = ['-created_at']  # Default ordering (newest first)
     
     def get_queryset(self):
-        """
-        Customize queryset based on user permissions and filters.
-        """
-        # Base queryset - only approved listings for general users
+        """ Filter listings based on query parameters and user permissions."""
+        # Base query on approved listings
         if self.action == 'list':
             # For list view, only show approved listings
-            return Listing.objects.filter(status='approved').select_related('host__user')
-        else:
-            # For detail/create/update/delete, show all listings
-            return Listing.objects.all().select_related('host__user')
+            queryset = Listing.objects.filter(status='approved').select_related('host__user')
+        queryset = self.queryset
+
+        #Filter by city
+        city = self.request.query_params.get('City', None)
+        if city:
+            queryset = queryset.filter(city__icontains=city)
+        
+        #Filter by property type
+        property_type = self.request.query_params.get('property_type', None)
+        if property_type:
+            queryset = queryset.filter(property_type__icontains=property_type)
+
+        # Filter by max guests
+        max_guests = self.request.query_params.get('max_guests', None)
+        if max_guests:
+            try:
+                max_guests = int(max_guests)
+                queryset = queryset.filter(max_guests__gte=max_guests)
+            except ValueError:
+                pass
+        # Filter by price range
+        min_price = self.request.query_params.get('min_price', None)
+        max_price = self.request.query_params.get('max_price', None)
+
+        if min_price:
+            try:
+                min_price = float(min_price)
+                queryset = queryset.filter(price_per_night__gte=min_price)
+            except ValueError:
+                pass
+
+        if max_price:
+            try:
+                max_price = float(max_price)
+                queryset = queryset.filter(price_per_night__lte=max_price)
+            except ValueError:
+                pass
+
     
     def get_permissions(self):
         """
@@ -305,6 +352,7 @@ class BookingViewSet(viewsets.ModelViewSet):
     """
     
     serializer_class = BookingSerializer
+    permissiion_classes = [IsAuthenticated] # Can't make a booking unless you are authenticated
     lookup_field = 'booking_id'  # Use UUID instead of default pk
     permission_classes = [permissions.IsAuthenticated]
     
@@ -521,3 +569,8 @@ class ReviewViewSet(viewsets.ModelViewSet):
         
         serializer = self.get_serializer(review)
         return Response(serializer.data)
+
+# TASK MONITORING VIEWS
+@api_view(['GET'])
+def task_monitoring(request, task_id):
+    
