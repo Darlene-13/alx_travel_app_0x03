@@ -389,7 +389,209 @@ class BookingViewSet(viewsets.ModelViewSet):
             return Booking.objects.filter(
                 user=user_profile
             ).select_related('property', 'user__user')
+        
+    def create(self, request, *args, **kwargs):
+        """
+        Create a new booking and send confirmation email asynchronously.
+        """
+        # Get user profile
+        try:
+            user_profile = get_object_or_404(UserProfile, user=request.user)
+
+            # Add user_id to the request data
+            mutable_data = request.data.copy()
+            mutable_data['user_id'] = str(user_profile.user_id)
+
+            # Create a serializer with modified data
+            serializer = self.get_serializer(data=mutable_data)
+
+            if serializer.is_valid():
+                # Save the booking
+                booking = serializer.save()
+
+                # Get the booking details for email
+                user = request.user
+                user_email = user.email
+                user_name = user.get_full_name() or user.username
+
+                # Get listing details
+                listing = booking.property
+                listing_title = listing.name
+
+                # Format dates
+                check_in_date = booking.start_date.strftime('%B %d, %Y')
+                check_out_date = booking.end_date.strftime('%B %d, %Y')
+
+                # Prepare additional booking details
+                booking_details = {
+                    'duration_nights': booking.duration_nights,
+                    'total_price': booking.total_price,
+                    'booking_id': booking.booking_id,
+                    'guests': booking.guests,
+                    'property_type': listing.property_type,
+                    'city': listing.city,
+                    'host_name': listing.host.user.get_full_name() or listing.host.user.username,   
+                }
+
+                # Trigger the email task asynchronously
+                try:
+                    email_task = send_booking_confirmation_email.delay(
+                        booking_id=booking.booking_id,
+                        user_email=user_email,
+                        user_name=user_name,
+                        listing_title=listing_title,
+                        check_in_date=check_in_date,
+                        check_out_date=check_out_date,
+                        total_price=booking.total_price,
+                        booking_details=booking_details
+                    )
+                    #Log the task ID for tracking
+                    logger.info(f"Booking Confirmation email task queued for {booking.booking_id}, task_id: {email_task.id}")
+
+                    # Prepare response data
+                    response_data = serializer.data
+                    response_data['email_task_id'] = email_task.id
+                    response_data['message'] = "Booking created successfully. Confirmation email will be sent to you shortly."
+
+                    return Response(response_data, status=status.HTTP_201_CREATED)
+                except Exception as email_error:
+                    logger.error(f"Error sending booking confirmation email: {str(e)}")
+                    response_data = serializer.data
+                    response_data['message'] = 'Booking created successfully but email notification failed.'
+                    response_data['email_error'] = str(email_error)
+                    return Response(
+                        response_data,
+                        status=status.HTTP_201_CREATED
+                    )
+            else:
+                return Response(serializer.errors, status=status.HTTP_404_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Error creating booking: {str(e)}")
+            return Response(
+                {'error': f"Failed to create booking: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    def update(self, request, *args, **kwargs):
+        """
+        Update a booking and optionally send notification.
+        """
+        try:
+            partial = kwargs.pop('partial', False)
+            instance = self.get_object()
+            serializer = self.get_serializer(instance, data=request.data, partial=partial)
+            
+            if serializer.is_valid():
+                # Check if important fields changed
+                important_fields_changed = False
+                if hasattr(instance, 'start_date') and 'start_date' in request.data:
+                    if str(instance.start_date) != str(request.data.get('start_date')):
+                        important_fields_changed = True
+                
+                if hasattr(instance, 'end_date') and 'end_date' in request.data:
+                    if str(instance.end_date) != str(request.data.get('end_date')):
+                        important_fields_changed = True
+                
+                # Save the updated booking
+                updated_booking = serializer.save()
+                
+                # Send update notification if important fields changed
+                if important_fields_changed:
+                    try:
+                        user = request.user
+                        send_booking_confirmation_email.delay(
+                            booking_id=str(updated_booking.booking_id),
+                            user_email=user.email,
+                            user_name=f"{user.first_name} {user.last_name}".strip() or user.username,
+                            listing_title=updated_booking.property.name,
+                            check_in_date=updated_booking.start_date.strftime('%B %d, %Y'),
+                            check_out_date=updated_booking.end_date.strftime('%B %d, %Y'),
+                            total_price=str(updated_booking.total_price)
+                        )
+                        logger.info(f"Update notification sent for booking {updated_booking.booking_id}")
+                    except Exception as e:
+                        logger.error(f"Failed to send update notification: {str(e)}")
+                
+                return Response(serializer.data)
+            else:
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                
+        except Exception as e:
+            logger.error(f"Error updating booking: {str(e)}")
+            return Response(
+                {'error': 'Failed to update booking'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
+    def destroy(self, request, *args, **kwargs):
+        """
+        Cancel a booking and send cancellation email.
+        """
+        try:
+            instance = self.get_object()
+            
+            # Send cancellation email before deleting
+            try:
+                user = request.user
+                send_booking_cancellation_email.delay(
+                    booking_id=str(instance.booking_id),
+                    user_email=user.email,
+                    user_name=f"{user.first_name} {user.last_name}".strip() or user.username,
+                    listing_title=instance.property.name,
+                    cancellation_reason=request.data.get('cancellation_reason', 'User requested cancellation')
+                )
+                logger.info(f"Cancellation email queued for booking {instance.booking_id}")
+            except Exception as e:
+                logger.error(f"Failed to send cancellation email: {str(e)}")
+            
+            # Delete the booking
+            self.perform_destroy(instance)
+            
+            return Response(
+                {'message': 'Booking cancelled successfully. Cancellation email will be sent shortly.'},
+                status=status.HTTP_204_NO_CONTENT
+            )
+            
+        except Exception as e:
+            logger.error(f"Error cancelling booking: {str(e)}")
+            return Response(
+                {'error': 'Failed to cancel booking'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=True, methods=['post'])
+    def send_reminder(self, request, pk=None):
+        """
+        Manually send a reminder email for a specific booking.
+        """
+        try:
+            booking = self.get_object()
+            user = request.user
+            
+            # Calculate days until check-in
+            days_until = (booking.start_date - timezone.now().date()).days
+            
+            email_task = send_booking_reminder_email.delay(
+                booking_id=str(booking.booking_id),
+                user_email=user.email,
+                user_name=f"{user.first_name} {user.last_name}".strip() or user.username,
+                listing_title=booking.property.name,
+                check_in_date=booking.start_date.strftime('%B %d, %Y'),
+                days_until_checkin=days_until
+            )
+            
+            return Response({
+                'message': 'Reminder email sent successfully',
+                'task_id': email_task.id,
+                'days_until_checkin': days_until
+            })
+            
+        except Exception as e:
+            logger.error(f"Error sending reminder: {str(e)}")
+            return Response(
+                {'error': 'Failed to send reminder email'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
     def perform_create(self, serializer):
         """
         Set the user to the current user when creating a booking.
@@ -487,7 +689,7 @@ class ReviewViewSet(viewsets.ModelViewSet):
     
     serializer_class = ReviewSerializer
     lookup_field = 'review_id'
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
     
     # Filtering and ordering
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
@@ -499,6 +701,7 @@ class ReviewViewSet(viewsets.ModelViewSet):
         """
         Return reviews based on user role.
         """
+        queryset = Review.objects.all()
         user = self.request.user
         
         try:
@@ -519,7 +722,31 @@ class ReviewViewSet(viewsets.ModelViewSet):
             return Review.objects.filter(
                 user=user_profile
             ).select_related('user__user', 'property')
-    
+        
+    def create(self, request, *args, **kwargs):
+        """
+        create a new review
+        """
+        try:
+            user_profile = get_object_or_404(UserProfile, user=request.user)
+
+            #Add user id to request data
+            mutable_data = request.data.copy()
+            mutable_data['user'] = str(user_profile.user_id)
+
+            serializer = self.get_serializer(data=mutable_data)
+
+            if serializer.is_valid():
+                review=serializer.save()
+                logger.info(f"Review created: {review.review_id}")
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            else:
+                logger.error(f"Review creation failed: {serializer.errors}")
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f" Error creating review: {str(e)}")
+            return Response({'error': f"Failed to create review: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
     def perform_create(self, serializer):
         """
         Set the user to the current user when creating a review.
@@ -569,8 +796,97 @@ class ReviewViewSet(viewsets.ModelViewSet):
         
         serializer = self.get_serializer(review)
         return Response(serializer.data)
+    
 
 # TASK MONITORING VIEWS
 @api_view(['GET'])
-def task_monitoring(request, task_id):
+@permission_classes([IsAuthenticated])
+def check_email_task_status(request, task_id):
+    """
+    Check the status of the email that is sending the task.
+    Usage: GET /api/email-task-status/<task_id>/
+    """
+    try:
+        task_result = AsyncResult(task_id)
+
+        response_data = {
+            'task_id': task_id,
+            'status': task_result.status,
+            'ready': task_result.ready(),
+            'successful': task_result.successful() if task_result.ready() else None,
+        }
+
+        if task_result.ready():
+            if task_result.successful():
+                response_data['result'] = task_result.result
+            else:
+                response_data['error'] = str(task_result.info)
+        else:
+            response_data['message'] = 'Task is still in progress'
+
+        return Response(response_data, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f" Error checking task status: {str(e)}")
+        return Response (
+            {'error': f'Failed to check task status: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
     
+@api_view(['POST'])
+@permission_classes(['IsAuthenticated'])
+def test_celery(request):
+    """
+    Test Celery connection and task execution.
+    Usage: POST/api/test-celery/
+    """
+    try:
+        # Run the test task
+        task = test_celery_connection.delay()
+        return Response(
+            {
+            'message': 'Test task created successfully',
+            'task_id': task.id,
+            'status': 'Task is currently running.......',
+            'check_status_url': f'/api/email-task-status/{task.id}/'
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error testing celery connection: {str(e)}")
+        return Response({
+            'error': f'Celery test failed: {str(e)}',
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['POST'])
+@permission_classes(['IsAuthenticated'])
+def send_test_email(request):
+    """
+    Send a test email to verify the current email functionality.
+    Usage: POST /api/send-test-email/
+    Body:{"email": "test@example.com"}
+    """
+    try:
+        # Get the email from the request data
+        email = request.data.get('email') or request.user.email
+
+        task = send_booking_confirmation_email.delay(
+            booking_id="TEST-123",
+            user_email=email,
+            user_name=request.user.get_full_name() or request.user.username,
+            listing_title="Test Property",
+            check_in_date="January 1 2024",
+            check_out_date="January 7 2024",
+            total_price="500.00"
+        )
+        return Response({
+            'message': f'Test email successfully queued to {email}',
+            'task_id': task.id,
+            'status': 'Task is currently running.......',
+        })
+
+    except Exception as e:
+        logger.error(f"Error sending test email:{str(e)}")
+        return Response(
+            {'error':f'Test email failed: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
