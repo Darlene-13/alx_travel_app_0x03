@@ -113,8 +113,8 @@ class Listing(models.Model):
     county = models.CharField(max_length = 100, help_text = "County where the property is located")
     postal_code = models.CharField(max_length = 100, help_text = "Postal code of the property")
     # GPS coordinates for mapping
-    latitude = models.DecimalField(max_digits =9, decimal_places = 6, help_text = "Location of the property", blank =True, null = True)
-    longitude = models.DecimalField(max_digits = 9, help_text = "Longitude location of the property", decimal_places = 8, blank = True, null =True)
+    latitude = models.DecimalField(max_digits =11, decimal_places = 6, help_text = "Location of the property", blank =True, null = True)
+    longitude = models.DecimalField(max_digits = 11, help_text = "Longitude location of the property", decimal_places = 8, blank = True, null =True)
 
     #Property specifications
     bedroom = models.PositiveIntegerField(help_text = "Number of bedrooms")

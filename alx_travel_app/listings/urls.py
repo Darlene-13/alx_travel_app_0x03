@@ -35,14 +35,16 @@ router.register(r'listings', ListingViewSet, basename='listing')
 router.register(r'bookings', BookingViewSet, basename='booking')
 router.register(r'reviews', ReviewViewSet, basename='review')
 
+
 # URL patterns
 urlpatterns = [
     # Include router URLs
     path('', include(router.urls)),
     
+
     # Authentication endpoints
-    path('api/token/', csrf_exempt(TokenObtainPairView.as_view()), name='token_obtain_pair'),
-    path('api/token/refresh/', csrf_exempt(TokenRefreshView.as_view()), name='token_refresh'),
+    path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 
     # Task monitoring endpoints
     path('api/email-task-status/<str:task_id>/', check_email_task_status, name='email_task_status'),
